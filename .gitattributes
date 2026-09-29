@@ -1,0 +1,7 @@
+# Normalise line endings to LF for every text file.
+#
+# The pipeline's default run target is a Linux host, and it generates files that execute there —
+# cloud-init user data, bootstrap scripts. A shell script checked out with CRLF on Windows fails
+# at its shebang before it can log anything: the host boots, then goes quiet. Nothing else in a
+# Windows-authored repository prevents that.
+* text=auto eol=lf

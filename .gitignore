@@ -1,0 +1,23 @@
+# Working set — the Agentic Design Pipeline's machinery and what it writes that is not
+# operational: the design, the evidence behind it (which may record probes against systems
+# a reader cannot reach), the pipeline's config, contract and skills, and the build-phase
+# documents. build/infra/ is the one exception — the Terraform is operational and ships;
+# its local plugins, state and plans do not, because state holds secrets in plaintext.
+# Anchored to the root, so an application directory named design/ or spec/ still ships.
+/design/
+/spec/
+/adpconf.yaml
+/build/*
+!/build/infra/
+/build/infra/.terraform/
+/build/infra/*.tfstate
+/build/infra/*.tfstate.*
+/build/infra/*.tfplan
+/build/infra/terraform.tfvars
+/.claude/
+/CLAUDE.md
+
+# ── The project's own ignores go below. Never remove or override the block above: a stock
+# ── language ignore's bare `build/` or `*.tfvars.json` silently drops the Terraform from
+# ── what ships. After any addition, this must print nothing:
+# ──   git check-ignore build/infra/main.tf build/infra/adp.auto.tfvars.json
