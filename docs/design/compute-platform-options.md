@@ -1,13 +1,18 @@
 # Where the Voice Companion Loop runs: GPU VMs or LKE?
 
-**Status:** open for team decision · **Researched:** 2026-09-29 · **Revised:** 2026-09-29, adding option C
-(a relay on a NodePort), validation jobs and an assessment · **Decides:** the compute platform for the
-demo on Akamai Cloud
+**Status:** decided 2026-10-01 · **Researched:** 2026-09-29 · **Revised:** 2026-09-29, adding option C
+(a relay on a NodePort), validation jobs and an assessment; 2026-10-13, adding the LKE teardown caveat
+and a runner note to validation job 1 · **Decides:** the compute platform for the demo on Akamai Cloud
+
+> **Decision (2026-10-01):** the team chose **option C**, standard LKE with a relay on a NodePort. Its
+> premises marked *(inferred)* are still untested, so [validation jobs](#validation-jobs) 1–6 are the
+> first work items.
 
 This document sets out the options and their trade-offs. The analysis makes no recommendation; the
 authors' read comes last, in [Assessment](#assessment), kept apart from it. Every factual statement
-cites a source checked on 2026-09-29. Statements marked *(inferred)* are reasoned from documented
-behavior and have not been tested on LKE; [Validation jobs](#validation-jobs) says how to test them.
+cites a source checked on 2026-09-29, except sources 31 and 32, checked on 2026-10-13. Statements
+marked *(inferred)* are reasoned from documented behavior and have not been tested on LKE;
+[Validation jobs](#validation-jobs) says how to test them.
 
 ## At a glance
 
@@ -214,6 +219,9 @@ Three of aiortc's properties shape every option:
 - **GPU billing.** Since July 1, 2026, GPU instances are billed "for actual hours used each month, with
   no monthly price cap", and they keep billing while powered off [22]. Standard LKE node pools cannot
   scale below one node [13]. Tearing down any option means deleting the GPU nodes.
+- **Teardown on LKE.** Deleting an LKE cluster removes the Linodes in its node pools, but its
+  "NodeBalancers and Block Storage volumes" stay on the account and must be deleted manually "to avoid
+  further charges" [31]. In options B to E, tearing down to zero means deleting those as well.
 - **Relay delay.** A relay in the same region adds little delay compared with speech recognition, the
   language model and speech synthesis *(inferred)*.
 
@@ -256,6 +264,11 @@ Sizes are rough estimates: **S** is a few hours, **M** about a day.
      NodePort and a TLS Gateway behind a standard NodeBalancer [18].
    - Deploy a minimal pipecat bot as an ordinary pod, and give pipecat's browser client STUNner as its
      only TURN server [29][30].
+   - Give the bot itself no ICE servers, so that it "gathers host candidates only" [32], as STUNner's
+     model expects [29]. Do not give the relay to pipecat's development runner: it takes ICE servers at
+     startup, "uses these for its own candidate gathering and hands them to the client in the `/start`
+     response, so both ends of the connection use the same servers" [32], and a bot that relays meets
+     the open aioice bug [25]. Set the relay on the browser client's connection alone [30].
    - *Pass:* two-way audio, with the browser's WebRTC statistics (`chrome://webrtc-internals` in
      Chrome) showing a relayed candidate pair. Note how long connecting takes.
 2. **UDP-blocked client.** Block outbound UDP on a test laptop and connect through a TLS relay: STUNner's
@@ -338,7 +351,7 @@ account on 2026-09-29. Confirm it in your own account and region.
 
 ## Sources
 
-Checked 2026-09-29.
+Checked 2026-09-29, except 31 and 32, checked 2026-10-13.
 
 1. Akamai, NodeBalancer types and features: https://techdocs.akamai.com/cloud-computing/docs/nodebalancer
 2. Akamai API changelog, UDP support for NodeBalancers (2025-07-02): https://techdocs.akamai.com/linode-api/changelog/nodebalancers-udp-support
@@ -370,3 +383,5 @@ Checked 2026-09-29.
 28. pipecat, choosing a transport: https://docs.pipecat.ai/client/concepts/choosing-a-transport
 29. STUNner, deployment models: https://github.com/l7mp/stunner/blob/main/docs/DEPLOYMENT.md
 30. pipecat, SmallWebRTC transport for the JavaScript client: https://docs.pipecat.ai/api-reference/client/js/transports/small-webrtc
+31. Akamai API reference, delete a Kubernetes cluster: https://techdocs.akamai.com/linode-api/reference/delete-lke-cluster
+32. pipecat, SmallWebRTC transport for the server and its development runner: https://docs.pipecat.ai/api-reference/server/services/transport/small-webrtc
