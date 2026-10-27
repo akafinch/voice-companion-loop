@@ -1,8 +1,8 @@
 # Voice Companion Loop: architecture overview
 
-**Status:** the reviewed design as of 2026-10-13, before it is grounded in concrete infrastructure.
-Specific engines, sizes and versions are still being chosen; [Still being settled](#still-being-settled)
-lists them. Why the demo runs this way on LKE, and the terms used here, are covered in
+**Status:** the grounded design as of 2026-10-13: the reviewed design, with its concrete services
+chosen. [Still to validate](#still-to-validate) lists what has yet to be tested. Why the demo runs this
+way on LKE, and the terms used here, are covered in
 [compute-platform-options.md](compute-platform-options.md).
 
 ## What it is
@@ -13,8 +13,8 @@ A second page reshapes the character: a persona composed from a few characterist
 from a few seconds of speech. Apply it mid-conversation, and the next reply comes from the new character,
 on the same call, with the conversation so far intact.
 
-Everything runs on Akamai Cloud: open models on Akamai GPUs, on standard LKE, brought up and torn down by
-Terraform. The design has three parts, each something the reader does:
+Everything runs on Akamai Cloud: open models on Akamai GPUs, on standard LKE in Seattle, brought up and
+torn down by Terraform. The design has three parts, each something the reader does:
 
 | Part | The reader... | What it shows |
 |---|---|---|
@@ -31,19 +31,21 @@ flowchart LR
         charpage["Character page"]
     end
 
-    subgraph cloud["Akamai Cloud: one region"]
+    subgraph cloud["Akamai Cloud: Seattle"]
         nbPage["Page NodeBalancer<br/>HTTPS on 443"]
         nbRelay["Relay NodeBalancer<br/>TURN over TLS on 443"]
         subgraph lke["Standard LKE cluster"]
-            front["HTTPS front"]
-            bot["Bot: one process<br/>pages, signalling, character API,<br/>voice pipeline, active character"]
-            relay["TURN relay (STUNner)"]
-            subgraph speech["Speech pool: RTX 4000 Ada"]
-                stt["Transcription"]
-                tts["Speech synthesis and<br/>voice cloning (VoiceStudio)"]
+            subgraph system["System pool: CPU"]
+                front["HTTPS front (Traefik)<br/>certificates for both hostnames"]
+                bot["Bot: one process<br/>pages, signalling, character API,<br/>voice pipeline, active character"]
+                relay["TURN relay (STUNner)"]
+            end
+            subgraph speech["Speech pool: two RTX 4000 Ada"]
+                stt["Transcription:<br/>Whisper on vLLM"]
+                tts["Speech synthesis and voice cloning:<br/>VoxCPM2 in VoiceStudio"]
             end
             subgraph language["Language pool: RTX PRO 6000 Blackwell"]
-                llm["Language model (vLLM)"]
+                llm["Language model:<br/>Qwen3.5 in NVFP4, on vLLM"]
             end
         end
     end
@@ -52,7 +54,8 @@ flowchart LR
     charpage -->|HTTPS| nbPage
     nbPage --> front --> bot
     talk -. "WebRTC audio over UDP,<br/>to a NodePort on any node" .-> relay
-    talk -. "or TURN over TLS" .-> nbRelay -.-> relay
+    talk -. "or TURN over TLS" .-> nbRelay -.-> front
+    front -. "the relay's stream" .-> relay
     relay -. "to the bot's pod address" .-> bot
     bot -->|transcribe| stt
     bot -->|"reply, audition greeting"| llm
@@ -60,17 +63,30 @@ flowchart LR
 ```
 
 - **One web origin.** Both pages, each call's signalling and connection settings, and the character API
-  all come from one bot process behind one HTTPS address, so nothing crosses origins. The HTTPS front
-  holds the page's certificate.
-- **One GPU pool per GPU class.** Transcription and speech synthesis run on the RTX 4000 Ada pool, and
-  the language model on the RTX PRO 6000 Blackwell pool. Each service is reachable only inside the
-  cluster, and counts as ready only once its model has loaded, so "up" means "answers". The bot itself
-  needs no GPU.
+  all come from one bot process behind one HTTPS address, so nothing crosses origins.
+- **One front for both hostnames.** The HTTPS front terminates TLS for the page's hostname and for the
+  relay's, passing the relay's stream on to the relay. It gets both certificates from Let's Encrypt.
+- **Three node pools:**
+  - the speech pool has two RTX 4000 Ada GPUs, one per speech service, so transcription and synthesis
+    never compete for memory;
+  - the language pool has one RTX PRO 6000 Blackwell, running the language model in NVFP4, a 4-bit
+    format the card supports natively;
+  - a CPU pool runs the bot, the relay, the front and the cluster's operators, and the GPU pools take
+    only GPU services.
+
+  Each GPU service is reachable only inside the cluster, and counts as ready only once its model has
+  loaded, so "up" means "answers".
 - **Swappable engines.** The bot reaches all three GPU services through OpenAI-compatible HTTP
   interfaces, so any one of them can change without touching the rest.
+- **Licences fit for a customer-facing demo:**
+  - the language model and VoxCPM2 are Apache-2.0, and Whisper is MIT; none needs a gated download;
+  - VoiceStudio itself is AGPL-3.0, and runs unmodified;
+  - VoiceStudio's default engine has non-commercial weights, which is why the demo adds VoxCPM2.
 - **Allow-listed access.** Cloud Firewalls admit only listed addresses, so a URL shown on a projector
-  reaches nothing from the audience's phones. That holds only over the presenter's own uplink: on shared
-  venue Wi-Fi, the whole room arrives from the same address.
+  reaches nothing from the audience's phones.
+  - Port 80 is open to everyone, but only so Let's Encrypt can validate the certificates.
+  - The allow-list holds only over the presenter's own uplink. On shared venue Wi-Fi, the whole room
+    arrives from the same address.
 
 ## How audio reaches the bot
 
@@ -80,12 +96,13 @@ pod address. So the browser never reaches the bot directly. It relays through a 
 cluster:
 
 - Where UDP is open, the browser reaches the relay on a NodePort, at any node's public address.
-- Where a network blocks UDP, it reaches the relay over TLS on port 443, through the relay's own
-  NodeBalancer.
+- Where a network blocks UDP, it reaches the relay over TLS on port 443. It goes through the relay's own
+  NodeBalancer to the HTTPS front, which terminates the TLS and passes the stream on.
 - The relay reaches the bot at its pod address, inside the cluster. The bot itself is given no STUN or
   TURN server.
 - A node's address may change when LKE replaces the node, so the bot hands the page fresh relay
-  settings on every call: the current addresses, the TLS hostname, and short-lived credentials.
+  settings on every call. The relay's own credential service supplies a short-lived credential and the
+  relay's current UDP address, and the bot adds the TLS address.
 
 ## One spoken turn
 
@@ -135,7 +152,8 @@ sequenceDiagram
   speaks it in the new voice. It plays as a clip over HTTPS.
 - **Applying.** The next reply on the talk page comes from the new character, on the same call, with
   the earlier turns kept. Reset restores the built-in character: a distinctive, customer-safe persona
-  with a licence-clear voice.
+  with a licence-clear voice. That voice can be designed from a text description, so it need not come
+  from anyone's recording.
 - **Nothing is persisted.** A restart returns the built-in character. No storage volume is used, because
   a volume would outlive the cluster and keep billing.
 
@@ -143,49 +161,51 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    vars["Terraform variables:<br/>region, node sizes,<br/>allowed addresses"] --> apply["terraform apply"]
-    apply --> billable["Everything that bills:<br/>cluster, two GPU pools,<br/>Cloud Firewalls, two NodeBalancers"]
+    vars["Terraform variables:<br/>region, node sizes,<br/>allowed addresses, images"] --> apply["terraform apply"]
+    apply --> billable["Everything that bills:<br/>the cluster and its three pools,<br/>two NodeBalancers"]
+    apply --> releases["Helm releases: GPU plugin,<br/>firewall controller, relay,<br/>front and the project"]
     apply --> secrets["Generated secrets become<br/>cluster Secrets"]
     billable --> start["Workloads start;<br/>GPU services fetch model weights"]
+    releases --> start
     secrets --> start
     start --> ready["Every service answers;<br/>Terraform prints the URL"]
     ready -. "after the session" .-> destroy["terraform destroy"]
     destroy --> zero["Nothing left billing"]
 ```
 
-- **Terraform owns everything that bills**, both NodeBalancers included. Deleting an LKE cluster on its
-  own leaves its NodeBalancers and storage volumes on the account, still billing. So the cluster's
-  services adopt Terraform's NodeBalancers instead of creating their own, and nothing claims a volume.
+- **Terraform owns everything that bills**, both NodeBalancers included.
+  - Deleting an LKE cluster on its own leaves its NodeBalancers and storage volumes on the account,
+    still billing. So the cluster's services adopt Terraform's NodeBalancers instead of creating their
+    own, and nothing claims a volume.
+  - Teardown leaves only things that cost nothing: the node firewall that Akamai's firewall controller
+    created, the issued certificates, and the published images.
 - **No domain is needed.** The page and the relay use their NodeBalancers' provider-assigned hostnames,
-  unless the relay's certificate turns out to need one (see below).
+  and Let's Encrypt issues certificates for those.
+- **Two project images**, published by CI: the bot with its pages, and VoiceStudio with VoxCPM2 added.
+  Everything else runs its upstream image.
 - **Configuration flows one way.** Terraform variables and generated secrets become cluster Secrets,
   which pods read at start. Nothing is copied by hand, and the account token never enters the cluster.
 - **On stage, the system is already up.** GPU nodes and model loads are too slow to watch, so the
   bring-up time is quoted from a timed rehearsal.
 
-## Still being settled
+## Still to validate
 
-These are being chosen as the design is grounded in concrete infrastructure:
+A few claims need a real run to settle. The
+[validation jobs](compute-platform-options.md#validation-jobs) cover them.
 
-- **The speech engine.** It must clone a voice from a short sample, under a licence fit for a
-  customer-facing demo. VoiceStudio's default engine has non-commercial model weights, so an alternative
-  engine that VoiceStudio supports is being evaluated.
-- **The language model and the transcription engine.**
-- **GPU sharing:** whether transcription and synthesis share one speech GPU, or get one each.
-- **Where the bot, relay and HTTPS front run:** a small CPU pool, or room on the speech pool.
-- **Relay settings:** whether the relay's own credential service supplies each call's settings, or the
-  bot assembles them.
-- **The relay's certificate.** A certificate authority checks a name by reaching it, and the relay's
-  hostname reaches the relay rather than the HTTPS front. If there is no clean path, the demo may need a
-  domain after all.
-- **Image publishing:** whether CI publishes the project's image, or the reader builds it.
-
-The platform's own open questions are covered by the
-[validation jobs](compute-platform-options.md#validation-jobs).
+- **The audio path:**
+  - the relay carries pipecat's audio to an ordinary pod (job 1);
+  - the TLS fallback works on a network that blocks UDP (job 2);
+  - what a pod's NAT does (job 3), and what a node recycle does to a call (job 4).
+- **The GPUs** (job 6):
+  - whether the node's preinstalled driver suits the images;
+  - whether the language model loads on the Blackwell, and how soon its first token arrives;
+  - how fast VoxCPM2 speaks a short sentence on the RTX 4000 Ada. This is the main risk to the
+    two-second target, since VoxCPM2's published speed was measured on a much larger card.
 
 ## Availability caveats
 
 - RTX PRO 6000 Blackwell availability, including as LKE node pools, was verified against one Akamai
-  account on 2026-09-29. Confirm it in your own account and region.
+  account on 2026-09-29, and in Seattle on 2026-10-13. Confirm it in your own account and region.
 - The NodeBalancer hostname behaviour was checked against one NodeBalancer on 2026-10-13. Use the
   hostname your own deployment prints.

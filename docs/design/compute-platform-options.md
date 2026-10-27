@@ -2,7 +2,8 @@
 
 **Status:** decided 2026-10-01 · **Researched:** 2026-09-29 · **Revised:** 2026-09-29, adding option C
 (a relay on a NodePort), validation jobs and an assessment; 2026-10-13, adding the LKE teardown caveat
-and a runner note to validation job 1 · **Decides:** the compute platform for the demo on Akamai Cloud
+and a runner note to validation job 1, and closing validation job 5; 2026-10-27, extending validation
+job 6 · **Decides:** the compute platform for the demo on Akamai Cloud
 
 > **Decision (2026-10-01):** the team chose **option C**, standard LKE with a relay on a NodePort. Its
 > premises marked *(inferred)* are still untested, so [validation jobs](#validation-jobs) 1–6 are the
@@ -252,8 +253,8 @@ Sizes are rough estimates: **S** is a few hours, **M** about a day.
 | 2 | Client on a UDP-blocked network | Does audio flow when the browser can reach the relay only over TLS on port 443? | all | S | |
 | 3 | NAT behavior from a pod | Would a STUN server alone work from an ordinary pod, making the relay unnecessary? | C, E | S | |
 | 4 | Node recycle | Does a recycled node keep its public IP? How long does a recycle take, and what happens to a call in progress? | B, C | S | |
-| 5 | GPU regions for our account | Which regions offer both GPU classes, as instances and as LKE node pools? | all | S | |
-| 6 | GPU pools on standard LKE | Do the preinstalled drivers run our images: VoiceStudio (CUDA 12.8) on the Ada, vLLM on the Blackwell? | B, C, D | M | |
+| 5 | GPU regions for our account (**done 2026-10-13**) | Which regions offer both GPU classes, as instances and as LKE node pools? | all | S | |
+| 6 | GPU pools on standard LKE | Do the preinstalled drivers run our images? Does the language model load and answer promptly on the Blackwell, and does VoxCPM2 speak fast enough on the Ada? | B, C, D | M | |
 | 7 | Baseline on a VM | Does a pipecat bot on a VM, with confined ports and a matching firewall rule, carry audio from another network? | A, D | S | |
 | 8 | LKE Enterprise inquiry | How long approval takes, which GPU plans are offered, how nodes are addressed, and when UDP on premium NodeBalancers leaves beta | E | S | |
 
@@ -281,11 +282,18 @@ Sizes are rough estimates: **S** is a few hours, **M** about a day.
    it [13]. Compare the IPs, time the recycle, and note what the call does.
 5. **GPU regions.** With an authenticated API token or Cloud Manager, list where both GPU plans can be
    deployed, as instances and as node pools. Start with Chicago, Osaka, Paris, Seattle and Singapore
-   [21].
+   [21]. *Done 2026-10-13:* both classes are available in Seattle (`us-sea`), confirmed by repeated
+   launches in one Akamai account. The demo runs there.
 6. **GPU pools.**
    - Create a standard cluster with one RTX 4000 Ada pool and one RTX PRO 6000 Blackwell pool.
    - Install the NVIDIA device plugin, or the GPU Operator with its driver install disabled [11].
-   - Run each service's image on its GPU. *Pass:* both services see their GPU and answer a request.
+   - Record the driver version `nvidia-smi` reports on each node, and check it against what each
+     service's image requires.
+   - On the Blackwell, load the chosen language model (Qwen3.5-122B-A10B in NVFP4) with vLLM's CUDA 12.9
+     image, an FP8 KV cache and thinking off, and time its first token.
+   - On an Ada, time how long VoxCPM2 in VoiceStudio takes to speak one short sentence.
+   - *Pass:* every service sees its GPU and answers a request, and the two timings leave room for the
+     demo's target of a spoken reply within about two seconds.
    - Delete the pools afterwards: GPU nodes bill by the hour [22].
 7. **VM baseline.** On a compute instance, run a minimal pipecat bot in Docker with host networking, a
    confined port range set on the host, and a matching Cloud Firewall rule [9]. The network test needs
@@ -347,7 +355,7 @@ Sizes are rough estimates: **S** is a few hours, **M** about a day.
 ## Availability caveat
 
 GPU availability, including RTX PRO 6000 Blackwell node pools on LKE, was verified against one Akamai
-account on 2026-09-29. Confirm it in your own account and region.
+account on 2026-09-29, and in Seattle on 2026-10-13. Confirm it in your own account and region.
 
 ## Sources
 
