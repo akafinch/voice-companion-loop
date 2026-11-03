@@ -2,16 +2,17 @@
 
 **Status:** decided 2026-10-01 · **Researched:** 2026-09-29 · **Revised:** 2026-09-29, adding option C
 (a relay on a NodePort), validation jobs and an assessment; 2026-10-13, adding the LKE teardown caveat
-and a runner note to validation job 1, and closing validation job 5; 2026-10-27, extending validation
-job 6 · **Decides:** the compute platform for the demo on Akamai Cloud
+and a runner note to validation job 1, and closing validation job 5; 2026-10-27, extending and then
+closing validation job 6 · **Decides:** the compute platform for the demo on Akamai Cloud
 
 > **Decision (2026-10-01):** the team chose **option C**, standard LKE with a relay on a NodePort. Its
-> premises marked *(inferred)* are still untested, so [validation jobs](#validation-jobs) 1–6 are the
-> first work items.
+> premises marked *(inferred)* are still untested, so [validation jobs](#validation-jobs) 1–4 are the
+> first work items; jobs 5 and 6 are done.
 
 This document sets out the options and their trade-offs. The analysis makes no recommendation; the
 authors' read comes last, in [Assessment](#assessment), kept apart from it. Every factual statement
-cites a source checked on 2026-09-29, except sources 31 and 32, checked on 2026-10-13. Statements
+cites a source checked on 2026-09-29, except sources 31 and 32, checked on 2026-10-13, and source 33,
+checked on 2026-10-27. Statements
 marked *(inferred)* are reasoned from documented behavior and have not been tested on LKE;
 [Validation jobs](#validation-jobs) says how to test them.
 
@@ -68,7 +69,7 @@ flowchart LR
     Browser["Browser<br/>(Svelte page)"] <-->|"WebRTC audio over UDP"| Bot["pipecat bot<br/>(WebRTC endpoint)"]
     Bot -->|HTTP| STT["Speech-to-text<br/>RTX 4000 Ada"]
     Bot -->|HTTP| LLM["Language model (vLLM)<br/>RTX PRO 6000 Blackwell"]
-    Bot -->|HTTP| TTS["Text-to-speech (VoiceStudio)<br/>RTX 4000 Ada"]
+    Bot -->|HTTP| TTS["Text-to-speech (VoiceStudio)<br/>the same Blackwell, time-sliced"]
 ```
 
 Only the link between the browser and the bot is WebRTC. The GPU services talk plain HTTP to the bot
@@ -254,7 +255,7 @@ Sizes are rough estimates: **S** is a few hours, **M** about a day.
 | 3 | NAT behavior from a pod | Would a STUN server alone work from an ordinary pod, making the relay unnecessary? | C, E | S | |
 | 4 | Node recycle | Does a recycled node keep its public IP? How long does a recycle take, and what happens to a call in progress? | B, C | S | |
 | 5 | GPU regions for our account (**done 2026-10-13**) | Which regions offer both GPU classes, as instances and as LKE node pools? | all | S | |
-| 6 | GPU pools on standard LKE | Do the preinstalled drivers run our images? Does the language model load and answer promptly on the Blackwell, and does VoxCPM2 speak fast enough on the Ada? | B, C, D | M | |
+| 6 | GPU pools on standard LKE (**done 2026-10-27**) | Do the preinstalled drivers run our images? Does the language model load and answer promptly on the Blackwell, and does VoxCPM2 speak fast enough on the Ada? | B, C, D | M | |
 | 7 | Baseline on a VM | Does a pipecat bot on a VM, with confined ports and a matching firewall rule, carry audio from another network? | A, D | S | |
 | 8 | LKE Enterprise inquiry | How long approval takes, which GPU plans are offered, how nodes are addressed, and when UDP on premium NodeBalancers leaves beta | E | S | |
 
@@ -295,6 +296,22 @@ Sizes are rough estimates: **S** is a few hours, **M** about a day.
    - *Pass:* every service sees its GPU and answers a request, and the two timings leave room for the
      demo's target of a spoken reply within about two seconds.
    - Delete the pools afterwards: GPU nodes bill by the hour [22].
+   - *Done 2026-10-27*, in six probe runs on a throwaway cluster in Seattle, in one Akamai account:
+     - Both nodes run NVIDIA driver 615.71.10, which supports CUDA up to 13.4.
+     - vLLM's CUDA 12.9 image fails at import on these nodes, a failure with an open upstream issue
+       [33]. Its default CUDA 13.0 image serves the language model and Whisper.
+     - On the Blackwell, Qwen3.5-122B-A10B in NVFP4 loads, and gives its first token in about 0.1 s
+       and its first sentence in under 0.2 s.
+     - On the Ada, VoxCPM2 takes about as long to speak a sentence as the sentence lasts, so a spoken
+       reply would start 2.5–3.5 s after the reader's turn ends: that does not pass. On the Blackwell
+       it takes a quarter of that time, or about half while the language model writes on the same card.
+     - On the Ada, Whisper large-v3-turbo transcribes a short utterance in about 0.07 s.
+     - **Outcome:** speech synthesis moves to the Blackwell, beside the language model. The stages
+       measured here then add up to an estimated 1.5 s, before the bot's wait to be sure the reader
+       has finished and the network; a timed rehearsal measures the whole turn. Transcription stays
+       on the Ada. A follow-on comparison on the same card also replaced the language model with
+       Gemma 4 26B-A4B in NVFP4. It stayed in character more reliably, and it answers about twice as
+       fast.
 7. **VM baseline.** On a compute instance, run a minimal pipecat bot in Docker with host networking, a
    confined port range set on the host, and a matching Cloud Firewall rule [9]. The network test needs
    no GPU. *Pass:* two-way audio from a browser on another network.
@@ -356,6 +373,8 @@ Sizes are rough estimates: **S** is a few hours, **M** about a day.
 
 GPU availability, including RTX PRO 6000 Blackwell node pools on LKE, was verified against one Akamai
 account on 2026-09-29, and in Seattle on 2026-10-13. Confirm it in your own account and region.
+Validation job 6's timings were measured in Seattle on 2026-10-27, on one node of each GPU class, so
+re-measure before relying on them.
 
 ## Sources
 
@@ -393,3 +412,4 @@ Checked 2026-09-29, except 31 and 32, checked 2026-10-13.
 30. pipecat, SmallWebRTC transport for the JavaScript client: https://docs.pipecat.ai/api-reference/client/js/transports/small-webrtc
 31. Akamai API reference, delete a Kubernetes cluster: https://techdocs.akamai.com/linode-api/reference/delete-lke-cluster
 32. pipecat, SmallWebRTC transport for the server and its development runner: https://docs.pipecat.ai/api-reference/server/services/transport/small-webrtc
+33. vLLM, issue 63121, on torchcodec breaking its CUDA 12.9 images: https://github.com/vllm-project/vllm/issues/63121

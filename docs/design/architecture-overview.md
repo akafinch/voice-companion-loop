@@ -1,9 +1,9 @@
 # Voice Companion Loop: architecture overview
 
-**Status:** the grounded design as of 2026-10-13: the reviewed design, with its concrete services
-chosen. [Still to validate](#still-to-validate) lists what has yet to be tested. Why the demo runs this
-way on LKE, and the terms used here, are covered in
-[compute-platform-options.md](compute-platform-options.md).
+**Status:** the grounded design as of 2026-11-02: the reviewed design, with its concrete services
+chosen, revised after the GPU validation run of 2026-10-27. [Still to validate](#still-to-validate)
+lists what has yet to be tested. Why the demo runs this way on LKE, and the terms used here, are
+covered in [compute-platform-options.md](compute-platform-options.md).
 
 ## What it is
 
@@ -40,12 +40,12 @@ flowchart LR
                 bot["Bot: one process<br/>pages, signalling, character API,<br/>voice pipeline, active character"]
                 relay["TURN relay (STUNner)"]
             end
-            subgraph speech["Speech pool: two RTX 4000 Ada"]
+            subgraph speech["Speech pool: RTX 4000 Ada"]
                 stt["Transcription:<br/>Whisper on vLLM"]
-                tts["Speech synthesis and voice cloning:<br/>VoxCPM2 in VoiceStudio"]
             end
-            subgraph language["Language pool: RTX PRO 6000 Blackwell"]
-                llm["Language model:<br/>Qwen3.5 in NVFP4, on vLLM"]
+            subgraph language["Language pool: RTX PRO 6000 Blackwell, time-sliced"]
+                llm["Language model:<br/>Gemma 4 26B-A4B in NVFP4, on vLLM"]
+                tts["Speech synthesis and voice cloning:<br/>VoxCPM2 in VoiceStudio"]
             end
         end
     end
@@ -67,10 +67,12 @@ flowchart LR
 - **One front for both hostnames.** The HTTPS front terminates TLS for the page's hostname and for the
   relay's, passing the relay's stream on to the relay. It gets both certificates from Let's Encrypt.
 - **Three node pools:**
-  - the speech pool has two RTX 4000 Ada GPUs, one per speech service, so transcription and synthesis
-    never compete for memory;
+  - the speech pool has one RTX 4000 Ada, for transcription;
   - the language pool has one RTX PRO 6000 Blackwell, running the language model in NVFP4, a 4-bit
-    format the card supports natively;
+    format the card supports natively, with speech synthesis beside it. The two take turns on the
+    card's compute, and the language model is capped at 40% of its memory, leaving speech ample room.
+    Synthesis moved here from the RTX 4000 Ada, where it spoke only about as fast as real time: too
+    slow for the two-second target;
   - a CPU pool runs the bot, the relay, the front and the cluster's operators, and the GPU pools take
     only GPU services.
 
@@ -131,9 +133,9 @@ sequenceDiagram
     Bot-->>B: transcript, reply and stage timings, on the same connection
 ```
 
-- **The model remembers nothing.** Every turn, the bot resends the persona, its own speaking rules (short
-  plain sentences, no markup, never out of character) and the whole conversation so far. The character
-  lives in that context, not in the model.
+- **The model remembers nothing.** Every turn, the bot resends the persona, its own speaking rules (two
+  or three short plain sentences, no markup, never out of character) and the whole conversation so far.
+  The character lives in that context, not in the model.
 - **Speed is shown, not claimed.** The page shows the live transcript and how long each stage took to its
   first output. The target is a spoken reply within about two seconds. Short first sentences help,
   because speech starts only once the first sentence is complete.
@@ -191,17 +193,18 @@ flowchart LR
 ## Still to validate
 
 A few claims need a real run to settle. The
-[validation jobs](compute-platform-options.md#validation-jobs) cover them.
+[validation jobs](compute-platform-options.md#validation-jobs) cover the audio path, and a timed
+rehearsal covers the whole turn.
 
 - **The audio path:**
   - the relay carries pipecat's audio to an ordinary pod (job 1);
   - the TLS fallback works on a network that blocks UDP (job 2);
   - what a pod's NAT does (job 3), and what a node recycle does to a call (job 4).
-- **The GPUs** (job 6):
-  - whether the node's preinstalled driver suits the images;
-  - whether the language model loads on the Blackwell, and how soon its first token arrives;
-  - how fast VoxCPM2 speaks a short sentence on the RTX 4000 Ada. This is the main risk to the
-    two-second target, since VoxCPM2's published speed was measured on a much larger card.
+- **The whole turn**, in the rehearsal:
+  - how soon the companion starts speaking. The measured stages put it about 1.9 s after the reader
+    stops, before the network and the speech service's own overhead, so the two-second target is
+    close. Half a second of that is the bot waiting to be sure the reader has finished;
+  - whether that half-second wait cuts off a reader who has only paused.
 
 ## Availability caveats
 
@@ -209,3 +212,6 @@ A few claims need a real run to settle. The
   account on 2026-09-29, and in Seattle on 2026-10-13. Confirm it in your own account and region.
 - The NodeBalancer hostname behaviour was checked against one NodeBalancer on 2026-10-13. Use the
   hostname your own deployment prints.
+- Where the speech services run, the choice of language model and every timing here come from
+  measurements on standard LKE in Seattle on 2026-10-27, on one node of each GPU class. Confirm them in
+  your own account, and re-measure before relying on the timings.

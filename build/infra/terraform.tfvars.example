@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (git-ignored) and fill in. LINODE_TOKEN comes from the environment.
+language_pool_type = "" # the RTX PRO 6000 Blackwell plan id from Cloud Manager's LKE plan list: g3-gpu-rtxpro6000-blackwell-1
+                        # in one account as of 2026-10-27; confirm in your own account
+allowed_cidrs      = ["203.0.113.7/32"]
+acme_email         = "you@example.com"
+bot_image          = "ghcr.io/<owner>/voice-companion-bot:<tag>"
+speech_image       = "ghcr.io/<owner>/voice-companion-speech:<tag>"
+# region = "us-sea"
