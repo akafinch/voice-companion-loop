@@ -169,7 +169,7 @@ def stand_in_server():
 
 @pytest.fixture
 def stand_ins(stand_in_server, monkeypatch):
-    """The stand-ins, emptied, with the bot's settings pointed at them and no relay (local mode)."""
+    """The stand-ins, emptied, with all eight of the bot's settings pointed at them."""
     STAND_INS.reset()
     STAND_INS.url = stand_in_server
     for name, value in {
@@ -179,8 +179,8 @@ def stand_ins(stand_in_server, monkeypatch):
         "STT_MODEL": StandIns.stt_model,
         "TTS_URL": f"{stand_in_server}/speech",
         "TTS_KEY": StandIns.key,
-        "TURN_AUTH_URL": "",
-        "TURN_TLS_HOST": "",
+        "TURN_AUTH_URL": f"{stand_in_server}/turn",
+        "TURN_TLS_HOST": "relay.example.net",
     }.items():
         monkeypatch.setattr(settings, name, value)
     monkeypatch.setattr(voices, "default_handle", None)

@@ -1,17 +1,15 @@
 """The bot's HTTP surface: relay settings (criterion 3), the active character, readiness."""
 
+import pytest
 from pipecat.transports.smallwebrtc.connection import SmallWebRTCConnection
 
-from companion import character, settings, voices
+from companion import character, relay, settings, voices
 from companion.app import webrtc
 
 
-async def test_relay_settings_on_lke(stand_ins, bot, monkeypatch):
+async def test_relay_settings_on_lke(stand_ins, bot):
     """Criterion 3: the page gets only the relay, over UDP and TLS, with credentials, and the
     bot's own end of the call gets no ICE server."""
-    monkeypatch.setattr(settings, "TURN_AUTH_URL", f"{stand_ins.url}/turn")
-    monkeypatch.setattr(settings, "TURN_TLS_HOST", "relay.example.net")
-
     first = (await bot.get("/api/relay")).json()
     second = (await bot.get("/api/relay")).json()
 
@@ -33,9 +31,12 @@ async def test_relay_settings_on_lke(stand_ins, bot, monkeypatch):
     await connection.pc.close()
 
 
-async def test_relay_settings_locally(stand_ins, bot):
-    """Without the relay pair the page gets no ICE server, and reaches the bot directly."""
-    assert (await bot.get("/api/relay")).json() == []
+async def test_no_call_without_the_relay(stand_ins, monkeypatch):
+    """The relay is the page's only way to the bot's pod, so without its settings the bot refuses
+    to hand out ICE servers instead of falling back to a direct connection."""
+    monkeypatch.setattr(settings, "TURN_AUTH_URL", "")
+    with pytest.raises(RuntimeError, match="COMPANION_TURN_AUTH_URL"):
+        await relay.ice_servers()
     assert stand_ins.ice == []
 
 

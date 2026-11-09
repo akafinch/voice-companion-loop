@@ -1,5 +1,6 @@
 """The bot's one web process: the talk page, its WebRTC signalling, each call's relay settings and the
-active character, all on one origin. Run it with `uvicorn companion.app:app --port 8080`.
+active character, all on one origin. It runs in the bot's pod on LKE, served by uvicorn on port 8080
+(the Dockerfile's CMD).
 """
 
 import httpx

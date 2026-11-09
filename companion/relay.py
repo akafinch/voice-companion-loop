@@ -1,7 +1,7 @@
 """Each call's relay settings: the ICE servers the page connects through.
 
-On LKE the bot's pod is reachable only through the in-cluster TURN relay, STUNner, so the page
-gets the relay alone, over UDP and over TLS on 443. Locally it gets none and reaches the bot directly.
+The bot's pod on LKE is reachable only through the in-cluster TURN relay, STUNner, so the page gets
+the relay alone, over UDP and over TLS on 443.
 """
 
 import uuid
@@ -12,8 +12,9 @@ from companion import settings
 
 
 async def ice_servers() -> list[dict]:
+    # Without the relay the page has no way to reach the pod, so refuse rather than send it nowhere.
     if not (settings.TURN_AUTH_URL and settings.TURN_TLS_HOST):
-        return []  # local mode
+        raise RuntimeError("COMPANION_TURN_AUTH_URL and COMPANION_TURN_TLS_HOST must both be set")
 
     # A short-lived credential from STUNner's auth service, minted per call. Its UDP URL names a
     # node's current address, so it follows a node recycle:
