@@ -82,7 +82,10 @@ Before you apply, `uv run pytest` renders every chart with the values Terraform 
 what must hold on LKE, such as that no Service creates a NodeBalancer Terraform does not own. It
 needs [Helm](https://helm.sh/) and the network.
 
-1. **Publish the images.** Push this repository to GitHub. On every push to `main`, the `images`
+1. **Publish the images.** Push this repository to GitHub. It includes a workflow file, so a push
+   over HTTPS needs a token allowed to write workflows. That means a classic token with the
+   `workflow` scope, or a fine-grained token with the Workflows permission. Without one, GitHub
+   rejects the whole push. A push over SSH needs neither. On every push to `main`, the `images`
    workflow (`.github/workflows/images.yml`) publishes `ghcr.io/<owner>/voice-companion-bot` and
    `ghcr.io/<owner>/voice-companion-speech`, each tagged with the commit. GHCR makes a new package
    private, and the chart pulls without credentials, so make both packages public in their settings

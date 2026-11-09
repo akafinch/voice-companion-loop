@@ -80,12 +80,11 @@ certificates, and the images on GHCR.
   The same create with `vcl-probe-gpu` succeeded. The module follows the API: `gpu-class` has no
   prefix, and its taints use the same key, which the reference's pattern allows [S15]. Taints are
   cited, not measured: the measured cluster had none.
-- **ASSUMPTION (unverified):**
-  - The helm provider 3.3 plans `helm_release` while its connection is still unknown, before the
-    cluster exists. `terraform plan` on an empty state settles this one. If it fails, write the
-    decoded kubeconfig to a file in a first apply targeting the cluster.
-  - LKE's kubeconfig carries a bearer token at `users[0].user.token`. The kubeconfig is unknown at
-    plan, so only the first `apply` settles this one.
+- **The helm provider 3.3 plans `helm_release` while its connection is still unknown,** before the
+  cluster exists. On 2026-11-09, `terraform plan` on an empty state planned all six releases.
+- **ASSUMPTION (unverified):** LKE's kubeconfig carries a bearer token at `users[0].user.token`.
+  The kubeconfig is unknown at plan, so only the first `apply` settles this. If it fails, write the
+  decoded kubeconfig to a file in a first apply targeting the cluster.
 - **The edge firewall is attached here *and* named by the Services' `firewall-id` annotation.**
   The cloud controller's source treats that as done: in v0.9.11, `updateServiceFirewall` changes
   nothing when the attached firewall matches the annotation [S13]. LKE runs its own copy of the

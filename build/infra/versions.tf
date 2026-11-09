@@ -23,10 +23,10 @@ terraform {
 provider "linode" {}
 
 # The cluster does not exist at first plan, so this configuration is unknown until apply.
-# ASSUMPTION (unverified): helm 3.3 plans helm_release with an unknown connection
-# before the cluster exists, which `terraform plan` on an empty state settles; and
-# LKE's kubeconfig carries a bearer token in users[0].user.token, which only the
-# first apply settles, since the kubeconfig is unknown at plan.
+# helm 3.3 plans helm_release with that unknown connection: `terraform plan` on an empty
+# state did so on 2026-11-09.
+# ASSUMPTION (unverified): LKE's kubeconfig carries a bearer token in users[0].user.token,
+# which only the first apply settles, since the kubeconfig is unknown at plan.
 provider "helm" {
   kubernetes = {
     host                   = local.kubeconfig.clusters[0].cluster.server
