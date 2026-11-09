@@ -1,0 +1,29 @@
+[project]
+name = "voice-companion-loop"
+version = "0.1.0"
+description = "A live, in-character voice conversation on Akamai GPUs."
+readme = "README.md"
+# 3.13 exactly: the image runs python:3.13-slim, and uv would otherwise pick a newer local Python.
+requires-python = "~=3.13.0"
+dependencies = [
+    "pipecat-ai[webrtc,silero,openai]~=1.12.0",
+    "fastapi~=0.143.0",
+    "uvicorn~=0.54.0",
+    "httpx",
+    # FastAPI's form parser, for the character page's voice sample. Earlier releases carry 2026's
+    # security advisories.
+    "python-multipart>=0.0.31",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "pyyaml",  # tests/deploy reads the rendered charts
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

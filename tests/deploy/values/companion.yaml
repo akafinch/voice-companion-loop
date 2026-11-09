@@ -1,0 +1,32 @@
+# What build/infra/main.tf passes deploy/chart: helm_release.companion's values, then set_sensitive.
+# Terraform computes the hostnames and IDs at apply; these stand in for them. Terraform passes the IDs
+# as strings, so they are quoted here too.
+images:
+  bot: ghcr.io/example/voice-companion-bot:latest       # terraform.tfvars.example
+  speech: ghcr.io/example/voice-companion-speech:latest
+  vllm: vllm/vllm-openai:v0.31.0                        # adp.auto.tfvars.json
+models:
+  chat: nvidia/Gemma-4-26B-A4B-NVFP4
+  transcription: openai/whisper-large-v3-turbo
+placement:
+  key: gpu-class
+  speech: ada
+  language: blackwell
+hosts:
+  page: 192-0-2-10.ip.linodeusercontent.com
+  relay: 192-0-2-11.ip.linodeusercontent.com
+front:
+  namespace: traefik
+  podSelector:
+    companion-front: traefik
+  entryPoint: websecure
+  certResolver: letsencrypt
+  pageNodeBalancerId: "1234567"
+  relayNodeBalancerId: "1234568"
+  firewallId: "2345678"
+relay:
+  udpNodePort: 30478
+  authUrl: http://stunner-auth.stunner-system:8088
+secrets:
+  turnSharedSecret: test-turn-shared-secret
+  voiceStudioAdminKey: test-voicestudio-admin-key

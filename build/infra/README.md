@@ -20,7 +20,7 @@ terraform init && terraform plan
 | Node firewall | `helm_release.cloud_firewall` (+ CRD chart) | Created by Akamai's cloud-firewall-controller as `lke-<cluster-id>`, with LKE's required rules [S9]. This module adds one rule: the relay's UDP NodePort, open to `allowed_cidrs` only. |
 | GPU scheduling | `helm_release.gpu_plugin` | NVIDIA device plugin 0.20.1, on the GPU pools only, advertising each GPU twice (time-slicing). Standard LKE preinstalls the drivers. |
 | TURN relay control plane | `helm_release.stunner` | STUNner 1.2.1: the operator, the auth service and the Gateway API CRDs [S10]. |
-| HTTPS front | `helm_release.traefik` | Traefik 3.7.16 (chart 42.1.3). Its own Service is off. Port 80 only redirects to `websecure`, which is the sole default entry point [S11]. Let's Encrypt HTTP-01. One replica. |
+| HTTPS front | `helm_release.traefik` | Traefik 3.7.17 (chart 42.3.0). Its own Service is off. Port 80 only redirects to `websecure`, which is the sole default entry point [S11]. Let's Encrypt HTTP-01. One replica. |
 | The application | `helm_release.companion` | `deploy/chart`, values below. `wait = false`: watch the models load with `kubectl get pods -n companion -w`. |
 | Secrets | `random_password.*` | The TURN shared secret and the VoiceStudio admin key, passed as `set_sensitive` so they land in cluster Secrets. |
 
@@ -82,14 +82,14 @@ certificates, and the images on GHCR.
   cited, not measured: the measured cluster had none.
 - **ASSUMPTION (unverified):**
   - The helm provider 3.3 plans `helm_release` while its connection is still unknown, before the
-    cluster exists.
-  - LKE's kubeconfig carries a bearer token at `users[0].user.token`.
-
-  `terraform plan` on an empty state settles both. If it fails, write the decoded kubeconfig to a
-  file in a first apply targeting the cluster.
-- **ASSUMPTION (unverified):** the edge firewall is attached here *and* named by the Services'
-  `firewall-id` annotation. The assumption is that the cloud controller treats an already-attached
-  firewall as done [S13].
+    cluster exists. `terraform plan` on an empty state settles this one. If it fails, write the
+    decoded kubeconfig to a file in a first apply targeting the cluster.
+  - LKE's kubeconfig carries a bearer token at `users[0].user.token`. The kubeconfig is unknown at
+    plan, so only the first `apply` settles this one.
+- **The edge firewall is attached here *and* named by the Services' `firewall-id` annotation.**
+  The cloud controller's source treats that as done: in v0.9.11, `updateServiceFirewall` changes
+  nothing when the attached firewall matches the annotation [S13]. LKE runs its own copy of the
+  controller, so the first `apply` confirms it.
 - **Docs disagree on pool `firewall_id`.** The provider's docs (v4.9.0) say an omitted pool
   `firewall_id` associates "the default firewall" [S1]. The API reference marked it "Beta, LKE
   Enterprise" as of 2026-10-13. The module sets no pool firewall and relies on the controller.
@@ -120,11 +120,15 @@ certificates, and the images on GHCR.
   - routers attach to all entry points by default: https://doc.traefik.io/traefik/reference/routing-configuration/http/routing/router/
   - `asDefault`, redirections: https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/
   - ACME email required, redirection compatible with HTTP-01: https://doc.traefik.io/traefik/reference/install-configuration/tls/certificate-resolvers/acme/
-  - chart 42.1.3 `values.yaml` and `templates/_podtemplate.tpl` (redirect and `asDefault` arguments; an emptyDir while persistence is off): https://github.com/traefik/traefik-helm-chart/tree/v42.1.3/traefik
+  - chart 42.3.0 `values.yaml` and `templates/_podtemplate.tpl` (redirect and `asDefault` arguments, rendered with this module's values; an emptyDir while persistence is off): https://github.com/traefik/traefik-helm-chart/tree/v42.3.0/traefik (as-of 2026-11-03)
+  - 3.7.17 fixes GHSA-xv5x-242w-7hf7, which affects 3.7.14–3.7.16: https://github.com/traefik/traefik/security/advisories/GHSA-xv5x-242w-7hf7 (as-of 2026-11-03)
 - S12. `linode_firewall` (`nodebalancers`): https://registry.terraform.io/providers/linode/linode/latest/docs/resources/firewall ·
   `linode_nodebalancer` (`ipv4`): https://registry.terraform.io/providers/linode/linode/latest/docs/resources/nodebalancer
 - S13. Cloud controller NodeBalancer adoption and firewalls (as-of 2026-10-13): https://github.com/linode/linode-cloud-controller-manager/blob/v0.9.10/cloud/linode/loadbalancers.go ·
-  https://github.com/linode/linode-cloud-controller-manager/blob/v0.9.10/cloud/linode/services/firewalls.go
+  https://github.com/linode/linode-cloud-controller-manager/blob/v0.9.10/cloud/linode/services/firewalls.go ·
+  v0.9.11, tags reset each sync (`updateNodeBalancerThrottleAndTags`, `GetLoadBalancerTags`) and a matching firewall left alone (`updateServiceFirewall`), as-of 2026-11-03:
+  https://github.com/linode/linode-cloud-controller-manager/blob/v0.9.11/cloud/linode/loadbalancers.go ·
+  https://github.com/linode/linode-cloud-controller-manager/blob/v0.9.11/cloud/linode/services/firewalls.go
 - S14. NodeBalancer hostname form (as-of 2026-10-13): public DNS resolution of the dashed-IPv4 name for Seattle addresses, no CAA record for either form, and prior Let's Encrypt issuance in https://crt.sh
 - S15. Linode API v4.215.0, node-pool `labels` and `taints` key rules: https://techdocs.akamai.com/linode-api/reference/post-lke-cluster ·
   https://github.com/linode/linode-api-docs (`openapi.json`)

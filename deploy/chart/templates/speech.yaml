@@ -1,0 +1,66 @@
+# Speech synthesis: VoiceStudio with VoxCPM2 (deploy/speech/), on the Blackwell beside the chat model.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: speech
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: speech
+  template:
+    metadata:
+      labels:
+        app: speech
+    spec:
+      nodeSelector:
+        {{ .Values.placement.key }}: {{ .Values.placement.language | quote }}
+      tolerations:
+        - key: {{ .Values.placement.key | quote }}
+          operator: Equal
+          value: {{ .Values.placement.language | quote }}
+          effect: NoSchedule
+      containers:
+        - name: voicestudio
+          image: {{ .Values.images.speech | quote }}
+          env:
+            - name: OMNIVOICE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: speech-key
+                  key: key
+            # Voices, VoiceStudio's database and, through the image's HF_HOME, VoxCPM2's weights.
+            - name: OMNIVOICE_DATA_DIR
+              value: /app/omnivoice_data
+          ports:
+            - containerPort: 3900
+          # /health proves the app is up, not the engine. deploy/speech/entry.sh writes /tmp/warm
+          # once VoxCPM2's weights are local and it has spoken in a cloned voice.
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "test -f /tmp/warm && curl -fsS http://127.0.0.1:3900/health"]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              nvidia.com/gpu: 1  # the Blackwell's other slot
+          volumeMounts:
+            - name: data
+              mountPath: /app/omnivoice_data
+      volumes:
+        # Node-local: saved voices last only as long as the pod, by design.
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: speech
+spec:
+  type: ClusterIP
+  selector:
+    app: speech
+  ports:
+    - port: 3900

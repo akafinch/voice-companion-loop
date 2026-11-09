@@ -1,0 +1,28 @@
+# What build/infra/main.tf passes the Traefik chart: helm_release.traefik's values, with
+# terraform.tfvars.example's ACME email.
+service:
+  enabled: false
+deployment:
+  replicas: 1
+  podLabels:
+    companion-front: traefik
+updateStrategy:
+  type: Recreate
+  rollingUpdate: null
+ports:
+  web:
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+          permanent: true
+  websecure:
+    asDefault: true
+certificatesResolvers:
+  letsencrypt:
+    acme:
+      email: you@example.com
+      storage: /data/acme.json
+      httpChallenge:
+        entryPoint: web

@@ -1,0 +1,75 @@
+# The chat model on vLLM, on the RTX PRO 6000 Blackwell, which it shares with speech synthesis.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: chat
+spec:
+  replicas: 1
+  # A rolling update would start a second copy where there is no GPU slot or memory for it.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: chat
+  template:
+    metadata:
+      labels:
+        app: chat
+    spec:
+      nodeSelector:
+        {{ .Values.placement.key }}: {{ .Values.placement.language | quote }}
+      tolerations:
+        - key: {{ .Values.placement.key | quote }}
+          operator: Equal
+          value: {{ .Values.placement.language | quote }}
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: {{ .Values.images.vllm | quote }}
+          # The image's entrypoint is `vllm serve`, so the model comes first.
+          args:
+            - {{ .Values.models.chat | quote }}
+            - --kv-cache-dtype=fp8
+            - --language-model-only
+            - --max-model-len=16384
+            - --max-num-seqs=4
+            # Time-slicing shares the card's compute but not its memory: this cap is what leaves
+            # speech synthesis its room.
+            - --gpu-memory-utilization=0.40
+            - '--default-chat-template-kwargs={"enable_thinking": false}'
+            - '--override-generation-config={"temperature": 0.7}'
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              nvidia.com/gpu: 1  # one of the card's two time-sliced slots
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: weights
+              mountPath: /root/.cache/huggingface
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+        # Downloaded at every start to node-local storage: nothing claims a volume.
+        - name: weights
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: chat
+spec:
+  type: ClusterIP
+  selector:
+    app: chat
+  ports:
+    - port: 8000

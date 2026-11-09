@@ -1,0 +1,41 @@
+# The front's routes. They sit beside the Services they name, since Traefik refuses cross-namespace
+# references by default, and each attaches to the HTTPS entry point alone: a route naming no entry
+# point would attach to all of them, port 80's included.
+# https://doc.traefik.io/traefik/reference/routing-configuration/kubernetes/crd/http/ingressroute/
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: page
+spec:
+  entryPoints:
+    - {{ .Values.front.entryPoint | quote }}
+  routes:
+    # No middleware: only Buffering limits request bodies, so voice samples of a few MB pass. And
+    # Traefik's default timeouts bound only the reading of a request, at 60 s, not the wait for its
+    # reply, so a slow audition passes too:
+    # https://doc.traefik.io/traefik/reference/install-configuration/entrypoints/
+    - match: Host(`{{ .Values.hosts.page }}`)
+      services:
+        - name: bot
+          port: 8080
+  tls:
+    certResolver: {{ .Values.front.certResolver | quote }}
+---
+# TURN over TLS: the front terminates TLS for the relay's hostname and passes the stream on to the
+# relay's TURN-TCP listener.
+# https://doc.traefik.io/traefik/reference/routing-configuration/kubernetes/crd/tcp/ingressroutetcp/
+apiVersion: traefik.io/v1alpha1
+kind: IngressRouteTCP
+metadata:
+  name: relay
+spec:
+  entryPoints:
+    - {{ .Values.front.entryPoint | quote }}
+  routes:
+    - match: HostSNI(`{{ .Values.hosts.relay }}`)
+      services:
+        - name: relay-tcp  # the Service STUNner names after the relay-tcp Gateway
+          port: 3478
+  tls:
+    certResolver: {{ .Values.front.certResolver | quote }}
+    passthrough: false

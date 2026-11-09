@@ -1,0 +1,46 @@
+# The front's two doors: a LoadBalancer Service for each Terraform-owned NodeBalancer. Both select
+# Traefik's pods, so both live in Traefik's namespace. Each one adopts its NodeBalancer by ID, keeps
+# it when the Service is deleted (Terraform destroys it instead), and names the edge firewall, which
+# the cloud controller would otherwise detach. Annotation values must be strings, hence the quotes.
+# https://github.com/linode/linode-cloud-controller-manager/blob/v0.9.11/docs/configuration/annotations.md
+apiVersion: v1
+kind: Service
+metadata:
+  name: companion-page
+  namespace: {{ .Values.front.namespace | quote }}
+  annotations:
+    service.beta.kubernetes.io/linode-loadbalancer-nodebalancer-id: {{ .Values.front.pageNodeBalancerId | quote }}
+    service.beta.kubernetes.io/linode-loadbalancer-preserve: "true"
+    service.beta.kubernetes.io/linode-loadbalancer-firewall-id: {{ .Values.front.firewallId | quote }}
+spec:
+  type: LoadBalancer
+  selector:
+    {{- toYaml .Values.front.podSelector | nindent 4 }}
+  ports:
+    - name: web  # certificate challenges; everything else is redirected to 443
+      port: 80
+      targetPort: web
+    - name: websecure
+      port: 443
+      targetPort: websecure
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: companion-relay
+  namespace: {{ .Values.front.namespace | quote }}
+  annotations:
+    service.beta.kubernetes.io/linode-loadbalancer-nodebalancer-id: {{ .Values.front.relayNodeBalancerId | quote }}
+    service.beta.kubernetes.io/linode-loadbalancer-preserve: "true"
+    service.beta.kubernetes.io/linode-loadbalancer-firewall-id: {{ .Values.front.firewallId | quote }}
+spec:
+  type: LoadBalancer
+  selector:
+    {{- toYaml .Values.front.podSelector | nindent 4 }}
+  ports:
+    - name: web
+      port: 80
+      targetPort: web
+    - name: websecure
+      port: 443
+      targetPort: websecure

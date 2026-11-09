@@ -1,0 +1,11 @@
+# What build/infra/main.tf passes the cloud-firewall-controller chart: helm_release.cloud_firewall's
+# values, with terraform.tfvars.example's allow-list and the default relay_udp_node_port.
+firewall:
+  inbound:
+    - label: relay-udp
+      action: ACCEPT
+      description: TURN relay UDP NodePort, allow-list only
+      protocol: UDP
+      ports: "30478"
+      addresses:
+        ipv4: [203.0.113.7/32]

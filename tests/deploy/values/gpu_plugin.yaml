@@ -1,0 +1,23 @@
+# What build/infra/main.tf passes the NVIDIA device plugin chart: helm_release.gpu_plugin's values.
+tolerations:
+  - key: gpu-class
+    operator: Exists
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: gpu-class
+              operator: In
+              values: [blackwell, ada]  # values(local.gpu_class), in key order: language, speech
+config:
+  default: default
+  map:
+    default: |
+      version: v1
+      sharing:
+        timeSlicing:
+          resources:
+            - name: nvidia.com/gpu
+              replicas: 2

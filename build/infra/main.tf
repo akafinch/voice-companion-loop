@@ -32,7 +32,7 @@ locals {
     cfw_crd    = { repo = "https://linode.github.io/cloud-firewall-controller", chart = "cloud-firewall-crd", version = "0.2.0", app = "0.2.0" }        # [S9]
     cfw        = { repo = "https://linode.github.io/cloud-firewall-controller", chart = "cloud-firewall-controller", version = "0.2.1", app = "0.2.1" } # [S9]
     stunner    = { repo = "https://l7mp.io/stunner", chart = "stunner", version = "1.2.1", app = "1.2.1" }                                              # [S10]
-    traefik    = { repo = "https://traefik.github.io/charts", chart = "traefik", version = "42.1.3", app = "3.7.16" }                                   # [S11]
+    traefik    = { repo = "https://traefik.github.io/charts", chart = "traefik", version = "42.3.0", app = "3.7.17" }                                   # [S11]
   }
 
   stunner_namespace = "stunner-system"
@@ -80,17 +80,27 @@ resource "linode_lke_cluster" "this" {
 }
 
 # ─── Front doors: two NodeBalancers, adopted and preserved by the front's Services ────
+# Once a Service adopts one, the cloud controller resets its tags to the cluster's name on every
+# sync [S13]. Terraform sets the tags at creation and then ignores them, so plans show no drift.
 
 resource "linode_nodebalancer" "page" {
   label  = "${var.cluster_label}-page"
   region = var.region
   tags   = [var.cluster_label]
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 }
 
 resource "linode_nodebalancer" "relay" {
   label  = "${var.cluster_label}-relay"
   region = var.region
   tags   = [var.cluster_label]
+
+  lifecycle {
+    ignore_changes = [tags]
+  }
 }
 
 # Edge firewall: 443 from the allow-list, 80 from anywhere for HTTP-01 only (Traefik redirects

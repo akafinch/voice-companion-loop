@@ -1,0 +1,68 @@
+# Transcription: Whisper on vLLM, alone on the RTX 4000 Ada.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: transcription
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: transcription
+  template:
+    metadata:
+      labels:
+        app: transcription
+    spec:
+      nodeSelector:
+        {{ .Values.placement.key }}: {{ .Values.placement.speech | quote }}
+      tolerations:
+        - key: {{ .Values.placement.key | quote }}
+          operator: Equal
+          value: {{ .Values.placement.speech | quote }}
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: {{ .Values.images.vllm | quote }}
+          # The image leaves out vLLM's audio extra, so the pod installs its packages before serving.
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              uv pip install --system av scipy soundfile soxr "mistral_common[audio]"
+              exec vllm serve {{ .Values.models.transcription | squote }} --gpu-memory-utilization=0.85
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 10
+            timeoutSeconds: 5
+          resources:
+            limits:
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - name: shm
+              mountPath: /dev/shm
+            - name: weights
+              mountPath: /root/.cache/huggingface
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+        - name: weights
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: transcription
+spec:
+  type: ClusterIP
+  selector:
+    app: transcription
+  ports:
+    - port: 8000

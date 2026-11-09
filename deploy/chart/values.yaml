@@ -1,0 +1,39 @@
+# The values contract with build/infra/main.tf, which passes every one of them; the chart reads
+# nothing else. The empty defaults only name the contract (build/infra/README.md lists it too).
+
+images:
+  bot: ""     # the bot and its pages, published to GHCR by CI
+  speech: ""  # VoiceStudio with VoxCPM2, published to GHCR by CI
+  vllm: ""    # vLLM's default image, which serves both the chat model and transcription
+
+models:
+  chat: ""
+  transcription: ""
+
+# The GPU pools' label and taint: one key, and a value per pool. The speech pool's RTX 4000 Ada runs
+# transcription; speech synthesis shares the language pool's RTX PRO 6000 Blackwell with the chat model.
+placement:
+  key: ""
+  speech: ""
+  language: ""
+
+hosts:
+  page: ""   # the page NodeBalancer's hostname
+  relay: ""  # the relay NodeBalancer's hostname
+
+front:
+  namespace: ""   # Traefik's: a Service selects pods in its own namespace only
+  podSelector: {} # Traefik's pod labels
+  entryPoint: ""  # the only entry point the routes attach to
+  certResolver: ""
+  pageNodeBalancerId: ""  # IDs arrive as strings, and the templates quote them
+  relayNodeBalancerId: ""
+  firewallId: ""
+
+relay:
+  udpNodePort: 0  # the UDP listener's fixed NodePort, which the node firewall opens
+  authUrl: ""     # STUNner's auth service
+
+secrets:  # set_sensitive in main.tf
+  turnSharedSecret: ""
+  voiceStudioAdminKey: ""

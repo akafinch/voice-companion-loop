@@ -1,0 +1,15 @@
+.git
+.venv
+.pytest_cache
+**/__pycache__
+# Docker anchors patterns at the context's root, so web/'s node_modules needs the leading **/.
+**/node_modules
+web/dist
+
+# The design's working set never ships, so it never enters the image either.
+design/
+spec/
+adpconf.yaml
+build/
+.claude/
+CLAUDE.md

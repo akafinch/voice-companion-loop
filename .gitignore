@@ -21,3 +21,12 @@
 # ── language ignore's bare `build/` or `*.tfvars.json` silently drops the Terraform from
 # ── what ships. After any addition, this must print nothing:
 # ──   git check-ignore build/infra/main.tf build/infra/adp.auto.tfvars.json
+
+.venv/
+__pycache__/
+node_modules/
+web/dist/
+
+# A filled-in copy of build/infra/terraform.tfvars.example stays on the machine that applies, under
+# any name. The template ships, and so does adp.auto.tfvars.json, which ends in .json.
+/build/infra/*.tfvars

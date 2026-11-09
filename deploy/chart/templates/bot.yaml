@@ -1,0 +1,66 @@
+# The bot: the talk and character pages, WebRTC signalling and the voice loop. It lands on the
+# system pool, since it tolerates neither GPU taint.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bot
+spec:
+  # Exactly one, replaced rather than rolled: calls and the active character live in its memory.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: bot
+  template:
+    metadata:
+      labels:
+        app: bot
+    spec:
+      containers:
+        - name: bot
+          image: {{ .Values.images.bot | quote }}
+          env:
+            - name: COMPANION_CHAT_URL
+              value: http://chat:8000/v1
+            - name: COMPANION_CHAT_MODEL
+              value: {{ .Values.models.chat | quote }}
+            - name: COMPANION_STT_URL
+              value: http://transcription:8000/v1
+            - name: COMPANION_STT_MODEL
+              value: {{ .Values.models.transcription | quote }}
+            - name: COMPANION_TTS_URL
+              value: http://speech:3900
+            - name: COMPANION_TTS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: speech-key
+                  key: key
+            - name: COMPANION_TURN_AUTH_URL
+              value: {{ .Values.relay.authUrl | quote }}
+            - name: COMPANION_TURN_TLS_HOST
+              value: {{ .Values.hosts.relay | quote }}
+          ports:
+            - containerPort: 8080
+          # /healthz answers 200 once VoiceStudio holds the default voice, so it trails the speech
+          # pod's warm-up, and its first 200 waits for a whole voice design: hence the long timeout.
+          # A readiness probe only withholds traffic and never restarts the container, so it may
+          # fail for as long as the models take to load:
+          # https://kubernetes.io/docs/concepts/workloads/pods/probes/#readiness-probe
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: bot
+spec:
+  type: ClusterIP
+  selector:
+    app: bot
+  ports:
+    - port: 8080

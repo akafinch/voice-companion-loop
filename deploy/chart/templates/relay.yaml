@@ -1,0 +1,66 @@
+# The TURN relay, STUNner. The browser reaches the bot's pod only through it: over UDP on one fixed
+# NodePort, or over TLS on 443 through the front.
+# https://github.com/l7mp/stunner/blob/v1.2.1/docs/GATEWAY.md
+apiVersion: stunner.l7mp.io/v1
+kind: GatewayConfig
+metadata:
+  name: relay
+spec:
+  authRef:
+    name: relay-auth
+    namespace: {{ .Release.Namespace }}
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: companion-relay
+spec:
+  controllerName: stunner.l7mp.io/gateway-operator
+  parametersRef:
+    group: stunner.l7mp.io
+    kind: GatewayConfig
+    name: relay
+    namespace: {{ .Release.Namespace }}
+---
+# STUNner's operator gives each Gateway a Service and a stunnerd Deployment of the same name. Neither
+# Service is load-balanced: a LoadBalancer Service would get a NodeBalancer Terraform does not own.
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: relay-udp
+  annotations:
+    stunner.l7mp.io/service-type: NodePort
+    stunner.l7mp.io/nodeport: '{"udp": {{ .Values.relay.udpNodePort }}}'
+spec:
+  gatewayClassName: companion-relay
+  listeners:
+    - name: udp
+      port: 3478
+      protocol: TURN-UDP
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: relay-tcp
+  annotations:
+    stunner.l7mp.io/service-type: ClusterIP
+spec:
+  gatewayClassName: companion-relay
+  listeners:
+    - name: tcp
+      port: 3478
+      protocol: TURN-TCP
+---
+# Both listeners relay to the bot's pod and nowhere else. STUNner's own UDPRoute: its chart installs
+# this one, not the Gateway API's.
+apiVersion: stunner.l7mp.io/v1
+kind: UDPRoute
+metadata:
+  name: bot
+spec:
+  parentRefs:
+    - name: relay-udp
+    - name: relay-tcp
+  rules:
+    - backendRefs:
+        - name: bot

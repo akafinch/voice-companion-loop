@@ -1,0 +1,8 @@
+# The Voice Companion Loop on standard LKE: the three GPU services, the bot, the TURN relay and the
+# front's routes and Services. build/infra/main.tf installs it (helm_release.companion).
+# apiVersion v2: Terraform's helm provider runs Helm 3, so the templates use only Helm 3's functions.
+apiVersion: v2
+name: companion
+description: A live, in-character voice conversation on Akamai GPUs, deployed on standard LKE.
+type: application
+version: 0.1.0
